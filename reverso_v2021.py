@@ -70,16 +70,22 @@ class Reverso_translator:
                     self.translations_languages.append(to_lang)
 
     def get_soup(self):
-        r = self.session.get(self.url, headers={'User-Agent': 'Mozilla/5.0'})
-        while not r.status_code == requests.codes.ok:
-            sleep(1)
+        try:
             r = self.session.get(self.url, headers={'User-Agent': 'Mozilla/5.0'})
-        self.soup = BeautifulSoup(r.content, 'html.parser')
+            self.soup = BeautifulSoup(r.content, 'html.parser')
+        except requests.exceptions.ConnectionError:
+            print(ErrorHandler('no_connection').message())
+            exit()
 
     def get_translations(self):
         if self.translations:
-            return [el.text.strip() for el in self.soup.find_all(
+            translations = [el.text.strip() for el in self.soup.find_all(
                 self.trs_tag, class_=re.compile(self.trs_cls_regex))][:self.translations]
+            if translations:
+                return translations
+            else:
+                print(ErrorHandler('no_word_found', self.word).message())
+                exit()
         return None
 
     def get_examples(self):
@@ -130,10 +136,25 @@ class Reverso_translator:
         if self.to_file:
             self.save_txt()
 
-def terminal_error():
-    print(f'{FAIL}<!!FAILED> wrong call or language\nExpected >python file.py from_language to_language which_word{ENDC}')
-    print(f'Supported >', ', '.join(language.lower() for _, language in supported_languages.items()))
+class ErrorHandler:
+    def __init__(self, err_type, extras=None):
+        self.err_type = err_type
+        self.extras = extras
 
+    def message(self):
+        global supported_languages
+        if self.err_type == 'wrong_call':
+            wrong_call_message = [
+                f'{FAIL}<!!> wrong arguments call\nExpected >python file.py from_language to_language which_word{ENDC}',
+                f'Supported > {", ".join(language for _, language in supported_languages.items())}']
+            return '\n'.join(wrong_call_message)
+        if self.err_type == 'no_such_language':
+            not_supported = ', '.join([lang for lang in self.extras if lang not in supported_languages.values()])
+            return f'{FAIL}Sorry, the program doesn\'t support {not_supported}{ENDC}'
+        if self.err_type == 'no_word_found':
+            return f'{FAIL}Sorry, unable to find {WARNING}{self.extras}{ENDC}'
+        if self.err_type == 'no_connection':
+            return f'{FAIL}Something wrong with your internet connection{ENDC}'
 
 def create_and_run():
     my_translator = Reverso_translator(terminal_entry, known_ids, supported_languages,
@@ -144,11 +165,12 @@ def create_and_run():
 
 def main():
     if not len(arguments) in (1, 4):
-        terminal_error()
+        print(ErrorHandler('wrong_call').message())
     elif len(arguments) > 2:
         if not terminal_entry['from_lang'] in supported_languages.values() or \
                 not terminal_entry['to_lang'] in supported_languages.values():
-            terminal_error()
+            print(ErrorHandler('no_such_language',
+                               (terminal_entry['from_lang'], terminal_entry['to_lang'])).message())
         else:
             create_and_run()
     else:
